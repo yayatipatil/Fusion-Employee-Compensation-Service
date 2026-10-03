@@ -148,10 +148,7 @@ def get_employees(req: func.HttpRequest) -> func.HttpResponse:
     try:
         department_id = req.params.get("departmentId")
 
-        connection = get_connection()
-        cursor = connection.cursor()
-
-        if department_id:
+        if department_id is not None:
             try:
                 department_id = int(department_id)
             except ValueError:
@@ -161,6 +158,10 @@ def get_employees(req: func.HttpRequest) -> func.HttpResponse:
                     mimetype="application/json"
                 )
 
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        if department_id is not None:
             cursor.execute(
                 """
                 SELECT
