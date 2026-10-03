@@ -3,3 +3,4 @@
 # azure-monitor-opentelemetry
 
 azure-functions
+pyodbc==5.3.0
