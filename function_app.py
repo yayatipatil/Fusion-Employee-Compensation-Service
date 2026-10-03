@@ -22,7 +22,21 @@ def employee_to_dict(row):
         "lastName": row.LastName,
         "departmentId": row.DepartmentID,
         "salary": float(row.Salary),
-        "bonus": calculate_default_bonus(row.Salary, row.Bonus),
+        "bonus": float(row.Bonus) if row.Bonus is not None else None,
+        "hireDate": row.HireDate.isoformat() if row.HireDate else None
+    }
+
+def employee_to_dict_with_default_bonus(row):
+    bonus = calculate_default_bonus(row.Salary, row.Bonus)
+
+    return {
+        "employeeId": row.EmployeeID,
+        "firstName": row.FirstName,
+        "lastName": row.LastName,
+        "departmentId": row.DepartmentID,
+        "salary": float(row.Salary),
+        "bonus": bonus,
+        "bonusSource": "actual" if row.Bonus is not None else "default_5_percent",
         "hireDate": row.HireDate.isoformat() if row.HireDate else None
     }
 
@@ -201,6 +215,50 @@ def get_employees(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
+@app.route(route="employees-with-default-bonus", methods=["GET"])
+def get_employees_with_default_bonus(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            SELECT
+                EmployeeID,
+                FirstName,
+                LastName,
+                DepartmentID,
+                Salary,
+                Bonus,
+                HireDate
+            FROM Employee
+            ORDER BY EmployeeID
+        """)
+
+        rows = cursor.fetchall()
+
+        employees = [
+            employee_to_dict_with_default_bonus(row)
+            for row in rows
+        ]
+
+        cursor.close()
+        connection.close()
+
+        return func.HttpResponse(
+            json.dumps(employees),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+    
 @app.route(route="employees/{employee_id}", methods=["GET"])
 def get_employee(req: func.HttpRequest) -> func.HttpResponse:
     try:

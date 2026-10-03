@@ -47,6 +47,7 @@ http://localhost:7071/api
 - `GET /employees?departmentId={id}` - Filter by department
 - `PUT /employees/{id}` - Update employee
 - `DELETE /employees/{id}` - Delete employee
+- `GET /employees-with-default-bonus` - Get employees with a 5% default bonus where no bonus is stored
 
 ### Compensation Reports
 
@@ -60,6 +61,7 @@ http://localhost:7071/api
 ## Notes
 
 - `NULL` bonus represents no bonus and is treated as `0` for calculations where required.
-- The optional 5% default bonus is implemented at read time. Stored NULL bonus values remain unchanged in the database, while employee read responses calculate 5% of salary when no bonus exists.
-- Compensation reports use the stored bonus values so that required report semantics such as "no bonus" and bonus ranking are preserved.
+- The optional 5% default bonus is implemented as a separate read-time endpoint: `/employees-with-default-bonus`.
+- The standard employee endpoints return the actual stored bonus values, including `null` when no bonus exists.
+- The default-bonus endpoint calculates 5% of salary for employees whose stored bonus is `NULL`, without modifying the database.
 - Database credentials are stored in environment settings and are not committed to source control.
