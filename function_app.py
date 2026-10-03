@@ -9,6 +9,11 @@ from db import get_connection
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
+def calculate_default_bonus(salary, bonus):
+    if bonus is None:
+        return round(float(salary) * 0.05, 2)
+    return float(bonus)
+
 
 def employee_to_dict(row):
     return {
@@ -17,7 +22,7 @@ def employee_to_dict(row):
         "lastName": row.LastName,
         "departmentId": row.DepartmentID,
         "salary": float(row.Salary),
-        "bonus": float(row.Bonus) if row.Bonus is not None else None,
+        "bonus": calculate_default_bonus(row.Salary, row.Bonus),
         "hireDate": row.HireDate.isoformat() if row.HireDate else None
     }
 
@@ -471,7 +476,18 @@ def get_employees_with_no_bonus(req: func.HttpRequest) -> func.HttpResponse:
         )
 
         rows = cursor.fetchall()
-        employees = [employee_to_dict(row) for row in rows]
+        employees = [
+    {
+        "employeeId": row.EmployeeID,
+        "firstName": row.FirstName,
+        "lastName": row.LastName,
+        "departmentId": row.DepartmentID,
+        "salary": float(row.Salary),
+        "bonus": None,
+        "hireDate": row.HireDate.isoformat() if row.HireDate else None
+    }
+    for row in rows
+]
 
         cursor.close()
         connection.close()
