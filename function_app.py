@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 
 import azure.functions as func
@@ -114,9 +115,10 @@ def create_employee(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-    except Exception as e:
+    except Exception:
+        logging.exception("Error while processing request.")
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({"error": "Internal server error."}),
             status_code=500,
             mimetype="application/json"
         )
@@ -185,9 +187,10 @@ def get_employees(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-    except Exception as e:
+    except Exception:
+        logging.exception("Error while processing request.")
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({"error": "Internal server error."}),
             status_code=500,
             mimetype="application/json"
         )
@@ -244,9 +247,10 @@ def get_employee(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-    except Exception as e:
+    except Exception:
+        logging.exception("Error while processing request.")
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({"error": "Internal server error."}),
             status_code=500,
             mimetype="application/json"
         )
@@ -347,9 +351,10 @@ def update_employee(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-    except Exception as e:
+    except Exception:
+        logging.exception("Error while processing request.")
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({"error": "Internal server error."}),
             status_code=500,
             mimetype="application/json"
         )
@@ -399,9 +404,343 @@ def delete_employee(req: func.HttpRequest) -> func.HttpResponse:
             status_code=204
         )
 
-    except Exception as e:
+    except Exception:
+        logging.exception("Error while processing request.")
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+    
+@app.route(route="reports/total-bonus", methods=["GET"])
+def get_total_bonus(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(COALESCE(Bonus, 0)), 0) AS TotalBonus
+            FROM Employee
+            """
+        )
+
+        row = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        return func.HttpResponse(
+            json.dumps({
+                "totalBonus": float(row.TotalBonus)
+            }),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request.")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+@app.route(route="reports/no-bonus", methods=["GET"])
+def get_employees_with_no_bonus(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                EmployeeID,
+                FirstName,
+                LastName,
+                DepartmentID,
+                Salary,
+                Bonus,
+                HireDate
+            FROM Employee
+            WHERE Bonus IS NULL
+            ORDER BY EmployeeID
+            """
+        )
+
+        rows = cursor.fetchall()
+        employees = [employee_to_dict(row) for row in rows]
+
+        cursor.close()
+        connection.close()
+
+        return func.HttpResponse(
+            json.dumps(employees),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request.")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+@app.route(route="reports/bonus-percentage", methods=["GET"])
+def get_bonus_percentage(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                EmployeeID,
+                FirstName,
+                LastName,
+                Salary,
+                Bonus,
+                ROUND((Bonus / Salary) * 100, 2) AS BonusPercentage
+            FROM Employee
+            WHERE Bonus IS NOT NULL
+            ORDER BY EmployeeID
+            """
+        )
+
+        rows = cursor.fetchall()
+
+        result = [
+            {
+                "employeeId": row.EmployeeID,
+                "firstName": row.FirstName,
+                "lastName": row.LastName,
+                "salary": float(row.Salary),
+                "bonus": float(row.Bonus),
+                "bonusPercentage": float(row.BonusPercentage)
+            }
+            for row in rows
+        ]
+
+        cursor.close()
+        connection.close()
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request.")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+@app.route(route="reports/departments-bonus", methods=["GET"])
+def get_departments_bonus_exceeds_average(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                d.DepartmentID,
+                d.DepartmentName,
+                SUM(COALESCE(e.Bonus, 0)) AS TotalBonus,
+                AVG(e.Salary) AS AverageSalary
+            FROM Department d
+            INNER JOIN Employee e
+                ON d.DepartmentID = e.DepartmentID
+            GROUP BY
+                d.DepartmentID,
+                d.DepartmentName
+            HAVING SUM(COALESCE(e.Bonus, 0)) > AVG(e.Salary)
+            ORDER BY d.DepartmentID
+            """
+        )
+
+        rows = cursor.fetchall()
+
+        result = [
+            {
+                "departmentId": row.DepartmentID,
+                "departmentName": row.DepartmentName,
+                "totalBonus": float(row.TotalBonus),
+                "averageSalary": round(float(row.AverageSalary), 2)
+            }
+            for row in rows
+        ]
+
+        cursor.close()
+        connection.close()
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request.")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+@app.route(route="reports/bonus-ranking", methods=["GET"])
+def get_bonus_ranking(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                EmployeeID,
+                FirstName,
+                LastName,
+                Salary,
+                Bonus,
+                RANK() OVER (
+                    ORDER BY
+                        CASE WHEN Bonus IS NULL THEN 1 ELSE 0 END,
+                        COALESCE(Bonus, 0) DESC
+                ) AS BonusRank
+            FROM Employee
+            ORDER BY BonusRank, EmployeeID
+            """
+        )
+
+        rows = cursor.fetchall()
+
+        result = [
+            {
+                "employeeId": row.EmployeeID,
+                "firstName": row.FirstName,
+                "lastName": row.LastName,
+                "salary": float(row.Salary),
+                "bonus": float(row.Bonus) if row.Bonus is not None else None,
+                "bonusRank": int(row.BonusRank)
+            }
+            for row in rows
+        ]
+
+        cursor.close()
+        connection.close()
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request.")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+@app.route(route="reports/highest-compensation", methods=["GET"])
+def get_highest_compensation(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT TOP 1
+                EmployeeID,
+                FirstName,
+                LastName,
+                Salary,
+                Bonus
+            FROM Employee
+            ORDER BY Salary DESC, EmployeeID
+            """
+        )
+
+        highest_salary_row = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT TOP 1
+                EmployeeID,
+                FirstName,
+                LastName,
+                Salary,
+                Bonus,
+                (Salary + COALESCE(Bonus, 0)) AS TotalCompensation
+            FROM Employee
+            ORDER BY
+                (Salary + COALESCE(Bonus, 0)) DESC,
+                EmployeeID
+            """
+        )
+
+        highest_total_row = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        highest_salary_employee = {
+            "employeeId": highest_salary_row.EmployeeID,
+            "firstName": highest_salary_row.FirstName,
+            "lastName": highest_salary_row.LastName,
+            "salary": float(highest_salary_row.Salary),
+            "bonus": (
+                float(highest_salary_row.Bonus)
+                if highest_salary_row.Bonus is not None
+                else None
+            )
+        }
+
+        highest_total_employee = {
+            "employeeId": highest_total_row.EmployeeID,
+            "firstName": highest_total_row.FirstName,
+            "lastName": highest_total_row.LastName,
+            "salary": float(highest_total_row.Salary),
+            "bonus": (
+                float(highest_total_row.Bonus)
+                if highest_total_row.Bonus is not None
+                else None
+            ),
+            "totalCompensation": float(highest_total_row.TotalCompensation)
+        }
+
+        same_employee = (
+            highest_salary_row.EmployeeID == highest_total_row.EmployeeID
+        )
+
+        result = {
+            "highestBaseSalary": highest_salary_employee,
+            "highestTotalCompensation": highest_total_employee,
+            "sameEmployee": same_employee
+        }
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except Exception:
+        logging.exception("Error while processing request.")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error."}),
             status_code=500,
             mimetype="application/json"
         )
